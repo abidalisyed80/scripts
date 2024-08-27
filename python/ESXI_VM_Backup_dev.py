@@ -1,7 +1,6 @@
-#/usr/bin/env python3
-#This script will connect to ESXi Host, create snapshot, export OVF(disk and files) to local system 
-#written by Abid Ali Syed (abid.ali.syed80@gmail.com )
-#
+#!/usr/bin/env python3
+#This script will backup all VMS(starting with dev) from ESXi host and save on local sysetem
+#Written by Abid Ali Syed (abid.ali.syed80@gmail.com)
 from pyVim.connect import SmartConnect, Disconnect
 from pyVmomi import vim
 import ssl
@@ -51,6 +50,11 @@ def create_snapshot(vm, snapshot_name, description):
     return task
 
 def export_ovf(si, vm, local_backup_path):
+    if local_backup_path is None:
+        raise ValueError("local_backup_path cannot be None")
+
+    print(f"Exporting VM {vm.name} to {local_backup_path}...")
+
     ovf_manager = si.content.ovfManager
     lease = vm.ExportVm()
 
@@ -60,14 +64,24 @@ def export_ovf(si, vm, local_backup_path):
     if lease.state != vim.HttpNfcLease.State.ready:
         raise Exception("Lease not ready, cannot export OVF/OVA.")
     
-    # Create backup directory if it doesn't exist
-    if not os.path.exists(local_backup_path):
-        os.makedirs(local_backup_path)
-   
-#Downlaod the OVF descriptor and all associated files 
+    # Create VM-specific backup directory if it doesn't exist
+    vm_backup_path = os.path.join(local_backup_path, vm.name)
+    print(f"Creating VM-specific directory: {vm_backup_path}")
+    
+    if not os.path.exists(vm_backup_path):
+        os.makedirs(vm_backup_path)
+    
+    # Download the OVF descriptor and all associated files
     for deviceUrl in lease.info.deviceUrl:
+        print(f"Processing device URL: {deviceUrl.url}")
+        print(f"deviceUrl.targetId: {deviceUrl.targetId}")
+
+        if deviceUrl.targetId is None:
+            print("Warning: deviceUrl.targetId is None, skipping this device URL.")
+            continue
+
         url = deviceUrl.url.replace("*", esxi_host)
-        file_name = os.path.join(local_backup_path, os.path.basename(deviceUrl.targetId))
+        file_name = os.path.join(vm_backup_path, os.path.basename(deviceUrl.targetId))
         
         print(f"Downloading {file_name} from {url}")
         
@@ -78,9 +92,14 @@ def export_ovf(si, vm, local_backup_path):
                     f.write(chunk)
 
     lease.HttpNfcLeaseComplete()
-    print(f"Exported OVF for VM {vm.name} to {local_backup_path}")
+    print(f"Exported OVF and all related files for VM {vm.name} to {vm_backup_path}")
 
 def backup_vm(si, vm_name, snapshot_name, description, local_backup_path):
+    print(f"Starting backup for VM: {vm_name} to path: {local_backup_path}")
+
+    if local_backup_path is None:
+        raise ValueError("local_backup_path cannot be None")
+
     content = si.RetrieveContent()
     vm = get_obj(content, [vim.VirtualMachine], vm_name)
     
@@ -109,14 +128,24 @@ def backup_vm(si, vm_name, snapshot_name, description, local_backup_path):
 
 def main():
     # Connection details for remote ESXi host
-    global esxi_host  # Declare esxi_host as global to use in export_ovf
-    esxi_host = 'EXSI_HOST_IP_ADDERSS'
-    username = 'user_name'
-    password = 'Password'
+    global esxi_host
+    esxi_host = 'esxi_host_ip'
+    username = 'username'
+    password = 'your_password'
     port = 443
 
-    # Local backup path , CHANGE TO YOUR desired path
-    local_backup_path = '/backups/esxi-backup'
+    # Base backup path
+    base_backup_path = '/data/s3/esxi-backup'
+
+    # Directories for dev and non-dev backups
+    dev_backup_path = os.path.join(base_backup_path, 'dev_backups')
+    non_dev_backup_path = os.path.join(base_backup_path, 'non_dev_backups')
+
+    # Ensure backup directories exist
+    for path in [dev_backup_path, non_dev_backup_path]:
+        if not os.path.exists(path):
+            print(f"Creating backup directory: {path}")
+            os.makedirs(path)
 
     # Disable SSL certificate verification (useful in dev environments)
     context = ssl._create_unverified_context()
@@ -125,23 +154,21 @@ def main():
     
     atexit.register(Disconnect, si)
     
-    # VM details - list of VMs to backup
-    vm_names = [
-	'vm1', 
-	'vm2', 
-	'vm3'
-	]
+    # VM details - retrieve all VMs
+    content = si.RetrieveContent()
+    vm_names = [vm.name for vm in content.viewManager.CreateContainerView(content.rootFolder, [vim.VirtualMachine], True).view]
+
+    # Backup VMs based on their name
     snapshot_name = 'Backup_Snapshot'
     description = 'Snapshot for backup'
 
-    # Ensure backup directory exists
-    if not os.path.exists(local_backup_path):
-        os.makedirs(local_backup_path)
-
     for vm_name in vm_names:
-        backup_vm(si, vm_name, snapshot_name, description, local_backup_path)
+        if vm_name.lower().startswith('dev'):
+            print(f"Backing up dev VM: {vm_name}")
+            backup_vm(si, vm_name, snapshot_name, description, dev_backup_path)
+#        else:
+#            print(f"Backing up non-dev VM: {vm_name}")
+#            backup_vm(si, vm_name, snapshot_name, description, non_dev_backup_path)
 
 if __name__ == "__main__":
     main()
-
-
