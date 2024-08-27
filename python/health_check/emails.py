@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+#This scritp will use gmail SMTP to send email notifications to give email addresses
+#written by Abid Ali Syed (abid.ali.syed80@gmail.com )
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart

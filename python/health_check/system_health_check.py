@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 #This script will check sysem load and disk usage for given patitions and notify via email using gmail smtp
+#written by Abid Ali Syed (abid.ali.syed80@gmail.com )
 import psutil
 import socket
 import subprocess

@@ -1,4 +1,7 @@
 #/usr/bin/env python3
+#This script will connect to ESXi Host, create snapshot, export OVF(disk and files) to local system 
+#written by Abid Ali Syed (abid.ali.syed80@gmail.com )
+#
 from pyVim.connect import SmartConnect, Disconnect
 from pyVmomi import vim
 import ssl
